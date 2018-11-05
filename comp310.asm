@@ -86,7 +86,24 @@ vblankwait2:
 	STA PPUADDR
 	
 	; Write the background colour
-	LDA #$2c
+	LDA #$38
+	STA PPUDATA
+	
+	; Write the pallet colours
+	LDA #$17
+	STA PPUDATA
+    LDA #$36
+	STA PPUDATA
+    LDA #$0D
+	STA PPUDATA
+
+    LDA #$10
+	STA PPUDATA
+    LDA #$11
+	STA PPUDATA
+    LDA #$36
+	STA PPUDATA
+    LDA #$0D
 	STA PPUDATA
 	
 	; Write sprite data for sprite 0
@@ -98,6 +115,16 @@ vblankwait2:
 	STA $0202
 	LDA #128	; X Position
 	STA $0203
+
+    ; Write sprite data for sprite 1
+	LDA #60	    ; Y Position
+	STA $0204
+	LDA #0		; Tile number
+	STA $0205
+	LDA #1		; Attributes
+	STA $0206
+	LDA #128	; X Position
+	STA $0207
 	
 	
 	LDA #%10000000	; Enable NMI
@@ -120,6 +147,12 @@ NMI:
 	ADC #1
 	STA $0203
 
+    ; Increment y position of sprite
+	LDA $0204
+	CLC
+	ADC #1
+	STA $0204
+
 	LDA #0
 	STA OAMADDR
 	LDA #02
@@ -140,4 +173,4 @@ NMI:
 
     .bank 2
     .org $0000
-    ; TODO: add graphics
+    .incbin "sprites.chr"    
