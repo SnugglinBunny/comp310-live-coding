@@ -14,6 +14,8 @@ PPUSCROLL 	= $2005
 PPUADDR 	= $2006
 PPUDATA 	= $2007
 OAMDMA 		= $4014
+JOYPAD1     = $4016
+JOYPAD2     = $4017
 
     .bank 0
     .org $C000
@@ -96,15 +98,6 @@ vblankwait2:
 	STA PPUDATA
     LDA #$0D
 	STA PPUDATA
-
-    LDA #$10
-	STA PPUDATA
-    LDA #$11
-	STA PPUDATA
-    LDA #$36
-	STA PPUDATA
-    LDA #$0D
-	STA PPUDATA
 	
 	; Write sprite data for sprite 0
 	LDA #120	; Y Position
@@ -115,17 +108,6 @@ vblankwait2:
 	STA $0202
 	LDA #128	; X Position
 	STA $0203
-
-    ; Write sprite data for sprite 1
-	LDA #60	    ; Y Position
-	STA $0204
-	LDA #0		; Tile number
-	STA $0205
-	LDA #1		; Attributes
-	STA $0206
-	LDA #128	; X Position
-	STA $0207
-	
 	
 	LDA #%10000000	; Enable NMI
 	STA PPUCTRL
@@ -141,18 +123,36 @@ forever:
 
 ; NMI is called on every frame
 NMI:
-	; Increment x position of sprite
-	LDA $0203
-	CLC
-	ADC #1
-	STA $0203
+    ; Initialise controller 1
+    LDA #1
+    STA JOYPAD1
+    LDA #0
+    STA JOYPAD1
 
-    ; Increment y position of sprite
-	LDA $0204
-	CLC
-	ADC #1
-	STA $0204
+    ; Read A button
+    LDA JOYPAD1
+    AND #%00000001
+    BEQ ReadA_Done  ; if ((JOYPAD1 & 1) != 0) {
+    LDA $0203
+    CLC
+    ADC #1
+    STA $0203
 
+ReadA_Done: ;}
+
+    ; Read B button
+    LDA JOYPAD1
+    AND #%00000001
+    BEQ ReadB_Done  ; if ((JOYPAD1 & 1) != 0) {
+    LDA $0200
+    CLC
+    ADC #1
+    STA $0200
+
+ReadB_Done: ;}
+
+
+    ; Copy sprite data to the PPU
 	LDA #0
 	STA OAMADDR
 	LDA #02
@@ -173,4 +173,4 @@ NMI:
 
     .bank 2
     .org $0000
-    .incbin "sprites.chr"    
+    .incbin "sprites.chr" 
