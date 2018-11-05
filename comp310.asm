@@ -5,38 +5,40 @@
 
 ; ---------------------------------------------------------------------------
 
-PPUCTRL 	= $2000
-PPUMASK 	= $2001
-PPUSTATUS 	= $2002
-OAMADDR 	= $2003
-OAMDATA 	= $2004
-PPUSCROLL 	= $2005
-PPUADDR 	= $2006
-PPUDATA 	= $2007
-OAMDMA 		= $4014
-JOYPAD1     = $4016
-JOYPAD2     = $4017
+PPUCTRL   = $2000
+PPUMASK   = $2001
+PPUSTATUS = $2002
+OAMADDR   = $2003
+OAMDATA   = $2004
+PPUSCROLL = $2005
+PPUADDR   = $2006
+PPUDATA   = $2007
+OAMDMA    = $4014
+JOYPAD1   = $4016
+JOYPAD2   = $4017
 
-BUTTON_A        = %10000000
-BUTTON_B        = %01000000
-BUTTON_SELECT   = %00100000
-BUTTON_START    = %00010000
-BUTTON_UP       = %00001000
-BUTTON_DOWN     = %000000100
-BUTTON_LEFT     = %000000010
-BUTTON_RIGHT    = %000000001
+BUTTON_A      = %10000000
+BUTTON_B      = %01000000
+BUTTON_SELECT = %00100000
+BUTTON_START  = %00010000
+BUTTON_UP     = %00001000
+BUTTON_DOWN   = %00000100
+BUTTON_LEFT   = %00000010
+BUTTON_RIGHT  = %00000001
 
     .rsset $0010
-joypad1_state    .rs 1
+joypad1_state      .rs 1
+bullet_active      .rs 1
 
     .rsset $0200
-spirte_player   .rs 4
+sprite_player      .rs 4
+sprite_bullet      .rs 4
 
     .rsset $0000
-SPRITE_Y        .rs 1
-SPRITE_TILE     .rs 1
-SPRITE_ATTRIB   .rs 1
-SPRITE_X        .rs 1
+SPRITE_Y           .rs 1
+SPRITE_TILE        .rs 1
+SPRITE_ATTRIB      .rs 1
+SPRITE_X           .rs 1
 
     .bank 0
     .org $C000
@@ -122,13 +124,13 @@ vblankwait2:
 	
 	; Write sprite data for sprite 0
 	LDA #120	; Y Position
-	STA spirte_player + SPRITE_Y
+	STA sprite_player + SPRITE_Y
 	LDA #0		; Tile number
-	STA spirte_player + SPRITE_TILE
+	STA sprite_player + SPRITE_TILE
 	LDA #0		; Attributes
-	STA spirte_player + SPRITE_ATTRIB
+	STA sprite_player + SPRITE_ATTRIB
 	LDA #128	; X Position
-	STA spirte_player + SPRITE_X
+	STA sprite_player + SPRITE_X
 	
 	LDA #%10000000	; Enable NMI
 	STA PPUCTRL
@@ -161,49 +163,78 @@ ReadController:
     CPX #8
     BNE ReadController
 
-    ; React to RIGHT button
+    ; React to Right button
     LDA joypad1_state
     AND #BUTTON_RIGHT
     BEQ ReadRight_Done  ; if ((JOYPAD1 & 1) != 0) {
-    LDA spirte_player + SPRITE_X
+    LDA sprite_player + SPRITE_X
     CLC
     ADC #1
-    STA spirte_player + SPRITE_X
+    STA sprite_player + SPRITE_X
+ReadRight_Done:         ; }
 
-ReadRight_Done: ;}
-
-    ; Read DOWN button
+    ; React to Down button
     LDA joypad1_state
     AND #BUTTON_DOWN
     BEQ ReadDown_Done  ; if ((JOYPAD1 & 1) != 0) {
-    LDA spirte_player + SPRITE_Y
+    LDA sprite_player + SPRITE_Y
     CLC
     ADC #1
-    STA spirte_player + SPRITE_Y
+    STA sprite_player + SPRITE_Y
+ReadDown_Done:         ; }
 
-ReadDown_Done: ;}
-
-    ; Read Left button
+    ; React to Left button
     LDA joypad1_state
     AND #BUTTON_LEFT
     BEQ ReadLeft_Done  ; if ((JOYPAD1 & 1) != 0) {
-    LDA spirte_player + SPRITE_X
+    LDA sprite_player + SPRITE_X
     SEC
     SBC #1
-    STA spirte_player + SPRITE_X
+    STA sprite_player + SPRITE_X
+ReadLeft_Done:         ; }
 
-ReadLeft_Done: ;}
-
-    ; Read UP button
+    ; React to Up button
     LDA joypad1_state
     AND #BUTTON_UP
     BEQ ReadUp_Done  ; if ((JOYPAD1 & 1) != 0) {
-    LDA spirte_player + SPRITE_Y
+    LDA sprite_player + SPRITE_Y
     SEC
     SBC #1
-    STA spirte_player + SPRITE_Y
+    STA sprite_player + SPRITE_Y
+ReadUp_Done:         ; }
 
-ReadUp_Done: ;}
+    ; React to A button
+    LDA joypad1_state
+    AND #BUTTON_A
+    BEQ ReadA_Done
+    ; Spawn a bullet if one is not active
+    LDA bullet_active
+    BNE ReadA_Done
+    ; No bullet active, so spawn one
+    LDA #1
+    STA bullet_active
+    LDA sprite_player + SPRITE_Y    ; Y position
+    STA sprite_bullet + SPRITE_Y
+    LDA #1      ; Tile number
+    STA sprite_bullet + SPRITE_TILE
+    LDA #0      ; Attributes
+    STA sprite_bullet + SPRITE_ATTRIB
+    LDA sprite_player + SPRITE_X    ; X position
+    STA sprite_bullet + SPRITE_X
+ReadA_Done:
+
+    ; Update the bullet
+    LDA bullet_active
+    BEQ UpdateBullet_Done
+    LDA sprite_bullet + SPRITE_Y
+    SEC
+    SBC #1
+    STA sprite_bullet + SPRITE_Y
+    BCS UpdateBullet_Done
+    ; If carry flag is clear, bullet has left the top of the screen -- destroy it
+    LDA #0
+    STA bullet_active
+UpdateBullet_Done:
 
 
     ; Copy sprite data to the PPU
