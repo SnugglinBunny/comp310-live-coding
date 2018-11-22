@@ -45,6 +45,9 @@ bullet_active      .rs 1
 temp_x             .rs 1
 temp_y             .rs 1
 enemy_info         .rs 4 * NUM_ENEMIES
+nameTableAddress   .rs 2
+scroll_x           .rs 1
+scroll_page        .rs 1
 
     .rsset $0200
 sprite_player      .rs 4
@@ -127,8 +130,12 @@ vblankwait2:
 	LDA #%10000000	; Enable NMI
 	STA PPUCTRL
 	
-	LDA #%00010000 ; Enable sprites
+	LDA #%00011000 ; Enable sprites and background
 	STA PPUMASK
+
+    LDA #0
+    STA PPUSCROLL   ; Set x scroll
+    STA PPUSCROLL   ; Set y scroll
 	
 	; Enter an infinite loop
 forever:
@@ -140,7 +147,35 @@ Initialise_Game: ; Begin subroutine
 	; Reset the PPU high/low latch
 	LDA PPUSTATUS
 	
-	; Write address 3F10 (background colour) to the PPU
+	; Write address 3F00 (background pallete) to the PPU
+	LDA #$3F
+	STA PPUADDR
+	LDA #$00
+	STA PPUADDR
+
+    ; Write the background colour
+	LDA #$38
+	STA PPUDATA
+	
+	; Write the backgroun pallete
+	LDA #$07
+	STA PPUDATA
+    LDA #$17
+	STA PPUDATA
+    LDA #$36
+	STA PPUDATA
+    LDA #$0C
+	STA PPUDATA
+    LDA #$31
+	STA PPUDATA
+    LDA #$05
+	STA PPUDATA
+    LDA #$15
+	STA PPUDATA
+    LDA #$25
+	STA PPUDATA
+
+    ; Write address 3F10 (sprite pallete) to the PPU
 	LDA #$3F
 	STA PPUADDR
 	LDA #$10
@@ -155,7 +190,7 @@ Initialise_Game: ; Begin subroutine
 	STA PPUDATA
     LDA #$36
 	STA PPUDATA
-    LDA #$0D
+    LDA #$05
 	STA PPUDATA
 	
 	; Write sprite data for sprite 0
@@ -182,8 +217,9 @@ InitEnemies_LoopX:
     STA sprite_enemy+SPRITE_Y, x
     LDA #0
     STA sprite_enemy+SPRITE_ATTRIB, x
-    LDA #1
+    LDA #2
     STA sprite_enemy+SPRITE_TILE, x
+    LDA #1
     STA enemy_info+ENEMY_SPEED, x
 	STA enemy_info+ENEMY_ALIVE, x
     ; Increment X register by 4
@@ -203,6 +239,76 @@ InitEnemies_LoopX:
     SBC #ENEMY_SPACING
     STA temp_y
     BNE InitEnemies_LoopY
+    
+    ; Load nametable data
+	LDA #$24            ; Write address $200 to PPUADDR register
+	STA PPUADDR
+	LDA #$00
+	STA PPUADDR
+
+    LDA #LOW(NameTableData)
+    STA nameTableAddress
+    LDA #HIGH(NameTableData)
+    STA nameTableAddress+1
+LoadNameTable2_OuterLoop:
+    LDY #0
+LoadNameTable2_InnerLoop:
+    LDA [nameTableAddress], Y
+    BEQ LoadNameTable2_End
+    STA PPUDATA
+    INY
+    BNE LoadNameTable2_InnerLoop
+    INC nameTableAddress+1
+    JMP LoadNameTable2_OuterLoop
+LoadNameTable2_End:
+
+    ; Load attribute data
+    LDA #$27            ; Write address $23C0 to PPUADDR register
+	STA PPUADDR
+	LDA #$C0
+	STA PPUADDR
+
+    LDA #%01010101
+    LDX #64
+LoadAttributes2_Loop:
+    STA PPUDATA
+    DEX
+    BNE LoadAttributes2_Loop
+
+    ; Load nametable data
+	LDA #$20            ; Write address $200 to PPUADDR register
+	STA PPUADDR
+	LDA #$00
+	STA PPUADDR
+
+    LDA #LOW(NameTableData)
+    STA nameTableAddress
+    LDA #HIGH(NameTableData)
+    STA nameTableAddress+1
+LoadNameTable_OuterLoop:
+    LDY #0
+LoadNameTable_InnerLoop:
+    LDA [nameTableAddress], Y
+    BEQ LoadNameTable_End
+    STA PPUDATA
+    INY
+    BNE LoadNameTable_InnerLoop
+    INC nameTableAddress+1
+    JMP LoadNameTable_OuterLoop
+LoadNameTable_End:
+
+    ; Load attribute data
+    LDA #$23            ; Write address $23C0 to PPUADDR register
+	STA PPUADDR
+	LDA #$C0
+	STA PPUADDR
+
+    LDA #%00000000
+    LDX #64
+LoadAttributes_Loop:
+    STA PPUDATA
+    DEX
+    BNE LoadAttributes_Loop
 
     RTS ; End subroutine
 
@@ -266,6 +372,23 @@ ReadLeft_Done:         ; }
     SBC #1
     STA sprite_player + SPRITE_Y
 ReadUp_Done:         ; }
+
+    ; Scroll
+    LDA scroll_x
+    CLC
+    ADC #1
+    STA scroll_x
+    STA PPUSCROLL
+    BCC Scroll_NoWrap
+    ; sroll_x has wrapped, so switch scroll_page
+    LDA scroll_page
+    EOR #1
+    STA scroll_page
+    ORA #%10000000
+    STA PPUCTRL
+Scroll_NoWrap:
+    LDA #0
+    STA PPUSCROLL
 
     ; React to A button
     LDA joypad1_state
@@ -404,6 +527,39 @@ UpdateEnemies_End:
 
     RTI         ; Return from interrupt
 
+; ---------------------------------------------------------------------------
+NameTableData:
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $031, $032, $033, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03 
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03 
+    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $00 ; null terminator
 ; ---------------------------------------------------------------------------
 
     .bank 1
