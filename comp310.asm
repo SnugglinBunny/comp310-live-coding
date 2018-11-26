@@ -34,35 +34,41 @@ ENEMY_DESCENT_SPEED = 4
 
 ENEMY_HITBOX_WIDTH   = 8
 ENEMY_HITBOX_HEIGHT  = 8
-BULLET_HITBOX_X      = 3 ; Relative to sprite top left corner
+BULLET_HITBOX_X      = 3        ; Relative to sprite top left corner
 BULLET_HITBOX_Y      = 1
 BULLET_HITBOX_WIDTH  = 2
 BULLET_HITBOX_HEIGHT = 6
 
     .rsset $0000
-joypad1_state      .rs 1
-bullet_active      .rs 1
-temp_x             .rs 1
-temp_y             .rs 1
-enemy_info         .rs 4 * NUM_ENEMIES
-nameTableAddress   .rs 2
-scroll_x           .rs 1
-scroll_page        .rs 1
+joypad1_state       .rs 1
+bullet_active       .rs 1
+temp_x              .rs 1
+temp_y              .rs 1
+enemy_info          .rs 4 * NUM_ENEMIES
+nameTableAddress    .rs 2
+scroll_x            .rs 1
+scroll_page         .rs 1
+player_speed        .rs 2       ; SUBPIXELS PER FRAME -- 16 bits
+player_position_sub .rs 1       ; in subpixels
 
     .rsset $0200
-sprite_player      .rs 4
-sprite_bullet      .rs 4
+sprite_player       .rs 4
+sprite_bullet       .rs 4
 sprite_enemy        .rs 4 * NUM_ENEMIES
 
     .rsset $0000
-SPRITE_Y           .rs 1
-SPRITE_TILE        .rs 1
-SPRITE_ATTRIB      .rs 1
-SPRITE_X           .rs 1
+SPRITE_Y            .rs 1
+SPRITE_TILE         .rs 1
+SPRITE_ATTRIB       .rs 1
+SPRITE_X            .rs 1
 
-    .rsset $0000
-ENEMY_SPEED        .rs 1
-ENEMY_ALIVE		   .rs 1
+    .rsset $0000    
+ENEMY_SPEED         .rs 1
+ENEMY_ALIVE		    .rs 1
+
+GRAVITY             = 1*256          ; In pixels/frame^2
+JUMP_SPEED          = -5*256         ; in subpixels
+SCREEN_BOTTOM_Y     = 210-8
 
     .bank 0
     .org $C000
@@ -156,19 +162,11 @@ Initialise_Game: ; Begin subroutine
     ; Write the background palette
     LDA #$37
     STA PPUDATA
-    LDA #$13
-    STA PPUDATA
-    LDA #$23
+    LDA #$17
     STA PPUDATA
     LDA #$3C
     STA PPUDATA
-    LDA #$31
-    STA PPUDATA
-    LDA #$07
-    STA PPUDATA
-    LDA #$17
-    STA PPUDATA
-    LDA #$27
+    LDA #$37
     STA PPUDATA
 
     ; Write address $3F10 (sprite palette) to the PPU
@@ -182,19 +180,17 @@ Initialise_Game: ; Begin subroutine
     STA PPUDATA
 
     ; Write the palette 0 colours (player)
-    LDA #$30
+    LDA #$07
     STA PPUDATA
-    LDA #$2D
+    LDA #$36
     STA PPUDATA
-    LDA #$16
+    LDA #$17
     STA PPUDATA
-
-    ; Write the palette 1 colours (enemy)
-    LDA #$2D
+    LDA #$05
     STA PPUDATA
-    LDA #$1D
+    LDA #$36
     STA PPUDATA
-    LDA #$11
+    LDA #$03
     STA PPUDATA
 	
 	; Write sprite data for sprite 0
@@ -219,7 +215,7 @@ InitEnemies_LoopX:
     STA sprite_enemy+SPRITE_X, x
     LDA temp_y
     STA sprite_enemy+SPRITE_Y, x
-    LDA #0
+    LDA #1
     STA sprite_enemy+SPRITE_ATTRIB, x
     LDA #2
     STA sprite_enemy+SPRITE_TILE, x
@@ -345,6 +341,16 @@ ReadController:
     CLC
     ADC #1
     STA sprite_player + SPRITE_X
+
+    LDA joypad1_state
+    AND #BUTTON_UP
+    BEQ ReadUp_Done
+    ; Set player speed
+    LDA #LOW(JUMP_SPEED)
+    STA player_speed
+    LDA #HIGH(JUMP_SPEED)
+    STA player_speed+1
+    
 ReadRight_Done:         ; }
 
     ; React to Down button
@@ -375,21 +381,53 @@ ReadLeft_Done:         ; }
     SEC
     SBC #1
     STA sprite_player + SPRITE_Y
-ReadUp_Done:         ; }
+ReadUp_Done:         
+    
+    ; Update player sprite
+    ; First, update speed
+    LDA player_speed    ; Low 8 bits
+    CLC
+    ADC #LOW(GRAVITY)
+    STA player_speed
+    LDA player_speed+1  ; High 8 bits
+    ADC #HIGH(GRAVITY)  ; NB: *Don't* clear the carry flag!
+    STA player_speed+1
+
+    ; Second, update position
+    LDA player_position_sub     ; Low 8 bits
+    CLC
+    ADC player_speed
+    STA player_position_sub
+    INC sprite_player+SPRITE_Y  ; High 8 bits
+    ADC player_speed+1          ; NB: *Don't* clear the carry flag
+    STA sprite_player+SPRITE_Y
+
+    ; Check for bottom of screen
+    ; Accumulator already contains player y position
+    CMP #SCREEN_BOTTOM_Y
+    
+    LDA #SCREEN_BOTTOM_Y-1
+    STA sprite_player+SPRITE_Y
+    LDA #0  
+    STA player_speed
+    STA player_speed+1
+
+    BCC updatePlayer_NoClamp
+updatePlayer_NoClamp:
 
     ; Scroll
-    LDA scroll_x
-    CLC
-    ADC #1
-    STA scroll_x
-    STA PPUSCROLL
-    BCC Scroll_NoWrap
-    ; sroll_x has wrapped, so switch scroll_page
-    LDA scroll_page
-    EOR #1
-    STA scroll_page
-    ORA #%10000000
-    STA PPUCTRL
+    ; LDA scroll_x
+    ; CLC
+    ; ADC #1
+    ; STA scroll_x
+    ; STA PPUSCROLL
+    ; BCC Scroll_NoWrap
+    ; ; sroll_x has wrapped, so switch scroll_page
+    ; LDA scroll_page
+    ; EOR #1
+    ; STA scroll_page
+    ; ORA #%10000000
+    ; STA PPUCTRL
 Scroll_NoWrap:
     LDA #0
     STA PPUSCROLL
@@ -556,11 +594,11 @@ NameTableData:
     .db $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13
     .db $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13
     .db $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13
-    .db $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13
+    .db $14, $15, $16, $17, $12, $12, $12, $12, $12, $12, $12, $12, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13, $13
+    .db $24, $25, $26, $27, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $34, $35, $36, $37, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
     .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
-    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
-    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
-    .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
+    .db $22, $22, $22, $22, $22, $22, $22, $22, $22, $22, $22, $22, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
     .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03 
     .db $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03, $03
     .db $00 ; null terminator
